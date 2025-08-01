@@ -1,20 +1,10 @@
+# cursor.py
 import tkinter as tk
 
 class PureCursor:
-    """纯净极简的光标控件"""
+    """光标控件"""
     def __init__(self, canvas, x=0, y=0, height=14, width=1, 
                  color="#ffffff", blink_speed=450):
-        """
-        初始化光标
-        
-        参数:
-            canvas: 父级Canvas控件
-            x, y: 初始位置
-            height: 光标高度
-            width: 光标宽度
-            color: 光标颜色
-            blink_speed: 闪烁速度(毫秒)
-        """
         self.canvas = canvas
         self.x = x
         self.y = y
@@ -24,18 +14,24 @@ class PureCursor:
         self.blink_speed = blink_speed
         self.visible = True
         self.blink_id = None
+        self.last_blink_time = 0
         
-        # 创建光标主体 - 简洁的矩形
+        # 创建光标主体
         self.cursor_id = canvas.create_rectangle(
             x, y, x + width, y + height,
             fill=color, outline="", width=0
         )
-        
-        # 开始闪烁动画
-        self.start_blinking()
     
     def move(self, x, y):
-        """移动光标到新位置"""
+        """平滑移动光标到新位置"""
+        # 记录当前可见状态
+        was_visible = self.visible
+        
+        # 取消当前闪烁计时
+        if self.blink_id:
+            self.canvas.after_cancel(self.blink_id)
+            self.blink_id = None
+        
         # 更新位置
         self.x = x
         self.y = y
@@ -47,12 +43,19 @@ class PureCursor:
             x + self.width, 
             y + self.height
         )
+        
+        # 保持原有可见状态
+        if was_visible:
+            self.canvas.itemconfig(self.cursor_id, fill=self.color)
+        
+        # 重新开始闪烁计时
+        self.start_blinking()
     
     def blink(self):
-        """光标闪烁动画"""
+        """优化后的闪烁动画"""
         self.visible = not self.visible
         
-        # 更新光标主体可见性
+        # 只更新可见性，不改变位置
         if self.visible:
             self.canvas.itemconfig(self.cursor_id, fill=self.color)
         else:
@@ -62,12 +65,16 @@ class PureCursor:
         self.blink_id = self.canvas.after(self.blink_speed, self.blink)
     
     def start_blinking(self):
-        """开始光标闪烁动画"""
+        """开始/恢复闪烁动画"""
         if self.blink_id is not None:
             self.canvas.after_cancel(self.blink_id)
-        self.visible = True  # 重置为可见状态
+        
+        # 立即显示光标
+        self.visible = True
         self.canvas.itemconfig(self.cursor_id, fill=self.color)
-        self.blink()
+        
+        # 开始闪烁循环
+        self.blink_id = self.canvas.after(self.blink_speed, self.blink)
     
     def stop_blinking(self):
         """停止光标闪烁动画"""

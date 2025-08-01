@@ -1,10 +1,11 @@
+# entry.py
 from tkinter import font as tkfont
 import tkinter as tk
 import math
 from .cursor import PureCursor
 
 class ModernEntry(tk.Canvas):
-    """使用PureCursor的高质量输入框"""
+    """优化后的输入框，延迟创建光标"""
     _active_cursor = None  # 类变量，记录当前激活光标的输入框
 
     def __init__(self, master, width=180, height=30, radius=2,
@@ -21,8 +22,8 @@ class ModernEntry(tk.Canvas):
         self._text = ""
         self._font = tkfont.Font(family=font_family, size=font_size)
         
-        # 使用固定光标高度，而不是字体高度
-        self._cursor_height = 17  # 固定光标高度
+        # 使用固定光标高度
+        self._cursor_height = 17
         
         # 绘制圆角边框
         self.rect_id = self._draw_rounded_rect(
@@ -37,7 +38,7 @@ class ModernEntry(tk.Canvas):
         self.text_x = 8
         self.text_y = (height - font_height) // 2
         
-        # 计算光标垂直偏移量，使其在文本行内居中
+        # 计算光标垂直偏移量
         self.cursor_y_offset = (font_height - self._cursor_height) // 2
         if self.cursor_y_offset < 0:
             self.cursor_y_offset = 0
@@ -50,7 +51,35 @@ class ModernEntry(tk.Canvas):
             font=self._font
         )
         
-        #光标对象
+        # 优化：延迟创建光标对象
+        self.cursor = None  # 初始时不创建光标
+        
+        # 事件绑定
+        self.bind("<Button-1>", self._on_click)
+        self.bind("<Key>", self._on_key_press)
+        self.bind("<FocusIn>", self._on_focus_in)
+        self.bind("<FocusOut>", self._on_focus_out)
+
+    def _on_focus_in(self, event=None):
+        """获得焦点时激活光标"""
+        # 优化：延迟创建光标
+        if self.cursor is None:
+            self._create_cursor()
+        
+        if ModernEntry._active_cursor:
+            ModernEntry._active_cursor.cursor.stop_blinking()
+        
+        ModernEntry._active_cursor = self
+        self.itemconfig(self.rect_id, outline=self.border_focus)
+        
+        if self.cursor:
+            self.cursor.start_blinking()
+    
+    def _create_cursor(self):
+        """在需要时创建光标"""
+        if self.cursor is not None:
+            return
+            
         self.cursor = PureCursor(
             self,
             x=self.text_x,
@@ -60,40 +89,23 @@ class ModernEntry(tk.Canvas):
             color="#6bd8c9",
             blink_speed=450
         )
-        self.cursor.stop_blinking()  # 初始不显示
-
-        # 事件绑定
-        self.bind("<Button-1>", self._on_click)
-        self.bind("<Key>", self._on_key_press)
-        self.bind("<FocusIn>", self._on_focus_in)
-        self.bind("<FocusOut>", self._on_focus_out)
-
-    def _on_focus_in(self, event=None):
-        """获得焦点时激活光标"""
-        # 停用上一个激活的光标并重置其状态
-        if ModernEntry._active_cursor:
-            ModernEntry._active_cursor.cursor.stop_blinking()
-            # 确保上一个光标被隐藏
-            ModernEntry._active_cursor.cursor.canvas.itemconfig(
-                ModernEntry._active_cursor.cursor.cursor_id, fill=""
-            )
-        
-        # 设置为当前激活
-        ModernEntry._active_cursor = self
-        self.itemconfig(self.rect_id, outline=self.border_focus)
-        self.cursor.start_blinking()  # 启动新光标闪烁
+        # 初始不显示
+        self.cursor.stop_blinking()
     
     def _on_focus_out(self, event=None):
         """失去焦点时隐藏光标"""
         if ModernEntry._active_cursor == self:
-            self.cursor.stop_blinking()
-            # 确保光标被隐藏
-            self.cursor.canvas.itemconfig(self.cursor.cursor_id, fill="")
+            if self.cursor:
+                self.cursor.stop_blinking()
             ModernEntry._active_cursor = None
         self.itemconfig(self.rect_id, outline=self.border_normal)
 
     def _on_click(self, event):
         """点击时计算光标位置"""
+        # 确保光标已创建
+        if self.cursor is None:
+            self._create_cursor()
+        
         click_x = event.x
         text_width = self._font.measure(self._text)
         
@@ -114,6 +126,10 @@ class ModernEntry(tk.Canvas):
 
     def _on_key_press(self, event):
         """处理键盘输入"""
+        # 确保光标已创建
+        if self.cursor is None:
+            self._create_cursor()
+        
         if event.keysym == "BackSpace":
             if self._cursor_pos > 0:
                 self._text = self._text[:self._cursor_pos-1] + self._text[self._cursor_pos:]
@@ -146,16 +162,11 @@ class ModernEntry(tk.Canvas):
         """更新光标位置"""
         substr = self._text[:self._cursor_pos]
         cursor_x = self.text_x + self._font.measure(substr)
-        
-        # 计算光标Y位置（添加垂直偏移）
         cursor_y = self.text_y + self.cursor_y_offset
         
-        # 移动PureCursor实例
-        self.cursor.move(cursor_x, cursor_y)
-        
-        # 确保光标可见
-        if ModernEntry._active_cursor == self:
-            self.cursor.start_blinking()
+        # 如果光标存在，更新其位置
+        if self.cursor:
+            self.cursor.move(cursor_x, cursor_y)
 
     def get(self):
         """获取输入框内容"""
@@ -170,8 +181,29 @@ class ModernEntry(tk.Canvas):
 
     def delete(self, fst, lst=None):
         """删除文本"""
+        # 处理特殊索引值
+        if fst == "end" or fst == tk.END:
+            fst = len(self._text)
+        
         if lst is None:
             lst = fst + 1
+        elif lst == "end" or lst == tk.END:
+            lst = len(self._text)
+        
+        # 确保索引是整数
+        try:
+            fst = int(fst)
+            lst = int(lst)
+        except (ValueError, TypeError):
+            return  # 无效索引，不做处理
+        
+        # 边界检查
+        if fst < 0:
+            fst = 0
+        if lst > len(self._text):
+            lst = len(self._text)
+        
+        # 执行删除
         self._text = self._text[:fst] + self._text[lst:]
         self._cursor_pos = fst
         self._update_text()
