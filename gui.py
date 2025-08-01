@@ -1,16 +1,14 @@
 # gui.py
 import tkinter as tk
 from tkinter import filedialog, messagebox
-import ctypes
-from file_corruptor import FileCorruptor
 from custom_widgets import RoundedButton, ModernEntry
+from file_corruptor import FileCorruptor
 
 class AdvancedFileCorruptor:
     """文件熵增器GUI界面"""
     def __init__(self, root):
         self.root = root
         self._setup_window()
-        self._try_acrylic_effect()
         self._create_widgets()
 
     def _setup_window(self):
@@ -22,29 +20,6 @@ class AdvancedFileCorruptor:
         self.fg_color = "#ffffff"
         self.accent = "#4ec9b0"
         self.root.configure(bg=self.bg_color)
-
-    def _try_acrylic_effect(self):
-        """尝试应用亚克力效果（仅Windows）"""
-        try:
-            hwnd = ctypes.windll.user32.GetParent(self.root.winfo_id())
-            class AccentPolicy(ctypes.Structure):
-                _fields_ = [("AccentState", ctypes.c_uint),
-                            ("AccentFlags", ctypes.c_uint),
-                            ("GradientColor", ctypes.c_uint),
-                            ("AnimationId", ctypes.c_uint)]
-            class WindowCompositionAttribute(ctypes.Structure):
-                _fields_ = [("Attribute", ctypes.c_int),
-                            ("Data", ctypes.POINTER(ctypes.c_byte)),
-                            ("SizeOfData", ctypes.c_size_t)]
-            policy = AccentPolicy()
-            policy.AccentState = 3  # 亚克力效果
-            policy.GradientColor = 0x01C1E1E1  # ARGB格式
-            ctypes.windll.user32.SetWindowCompositionAttribute(
-                hwnd, WindowCompositionAttribute(19,
-                    ctypes.pointer(ctypes.c_byte.from_buffer(policy)),
-                    ctypes.sizeof(policy)))
-        except Exception:
-            pass
 
     def _create_widgets(self):
         """创建界面控件"""
@@ -185,8 +160,3 @@ class AdvancedFileCorruptor:
             messagebox.showinfo("完成", "文件损坏操作已完成！")
         except Exception as e:
             messagebox.showerror("错误", f"操作失败: {str(e)}")
-
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = AdvancedFileCorruptor(root)
-    root.mainloop()
