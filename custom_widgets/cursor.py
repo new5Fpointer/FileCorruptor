@@ -1,7 +1,4 @@
 import tkinter as tk
-import math
-import time
-from tkinter import font
 
 class PureCursor:
     """纯净极简的光标控件"""

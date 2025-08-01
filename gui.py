@@ -3,8 +3,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 import ctypes
 from file_corruptor import FileCorruptor
-from button import RoundedButton
-from entry import ModernEntry
+from custom_widgets import RoundedButton, ModernEntry
 
 class AdvancedFileCorruptor:
     """文件熵增器GUI界面"""

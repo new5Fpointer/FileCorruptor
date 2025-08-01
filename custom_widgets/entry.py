@@ -1,7 +1,7 @@
 from tkinter import font as tkfont
 import tkinter as tk
 import math
-from cursor import PureCursor
+from .cursor import PureCursor
 
 class ModernEntry(tk.Canvas):
     """使用PureCursor的高质量输入框"""
