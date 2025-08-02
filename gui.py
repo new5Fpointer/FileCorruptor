@@ -1,6 +1,7 @@
 # gui.py
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
+import threading
 from custom_widgets import RoundedButton, ModernEntry
 from file_corruptor import FileCorruptor
 
@@ -10,12 +11,13 @@ class AdvancedFileCorruptor:
         self.root = root
         self._setup_window()
         self._create_widgets()
+        self.processing = False
 
     def _setup_window(self):
         """窗口基本设置"""
-        self.root.title("文件熵增器")
-        self.root.geometry("650x560")  # 增加高度以容纳新控件
-        self.root.minsize(500, 450)
+        self.root.title("文件熵增处理器")
+        self.root.geometry("650x600")  # 增加高度以容纳进度条
+        self.root.minsize(500, 500)
         self.bg_color = "#252526"
         self.fg_color = "#e0e0e0"
         self.accent = "#4ec9b0"
@@ -371,6 +373,32 @@ class AdvancedFileCorruptor:
         # 初始更新替换模式显示
         self._update_replace_mode()
         
+        # 进度条区域
+        progress_frame = tk.Frame(main_frame, bg=self.bg_color)
+        progress_frame.pack(fill=tk.X, pady=(10, 5))
+        
+        # 进度条
+        self.progress_var = tk.DoubleVar()
+        self.progress_bar = ttk.Progressbar(
+            progress_frame, 
+            variable=self.progress_var, 
+            maximum=100,
+            length=500,
+            mode='determinate'
+        )
+        self.progress_bar.pack(fill=tk.X, padx=10)
+        
+        # 进度文本
+        self.progress_text = tk.StringVar(value="等待开始...")
+        progress_label = tk.Label(
+            progress_frame,
+            textvariable=self.progress_text,
+            bg=self.bg_color,
+            fg=self.fg_color,
+            font=("微软雅黑", 9)
+        )
+        progress_label.pack(pady=(5, 0))
+        
         # 操作按钮区域
         btn_frame = tk.Frame(main_frame, bg=self.bg_color)
         btn_frame.pack(pady=15)
@@ -402,7 +430,7 @@ class AdvancedFileCorruptor:
             anchor=tk.W,
             padx=10
         )
-        status_bar.pack(fill=tk.X, pady=(10, 0))
+        status_bar.pack(fill=tk.X, pady=(5, 0))
         
         # 创建自定义样式
         self._create_styles()
@@ -422,6 +450,11 @@ class AdvancedFileCorruptor:
             foreground=self.accent,
             font=("微软雅黑", 9, "bold")
         )
+        
+        # 进度条样式
+        style.configure("TProgressbar", thickness=8)
+        style.configure("TProgressbar.trough", background="#333333")
+        style.configure("TProgressbar.pbar", background=self.accent)
     
     def _update_mode_display(self):
         """根据选择的模式更新显示"""
@@ -462,6 +495,9 @@ class AdvancedFileCorruptor:
     
     def _start_corrupt(self):
         """执行文件损坏操作"""
+        if self.processing:
+            return
+            
         inp = self.input_entry.get()
         out = self.output_entry.get()
         
@@ -470,13 +506,11 @@ class AdvancedFileCorruptor:
             return
         
         try:
-            # 更新状态
-            self.status_var.set("处理中...")
+            # 禁用按钮防止重复点击
             self.process_btn.configure(state="disabled")
-            self.root.update()
+            self.processing = True
             
             # 获取参数
-            corruptor = FileCorruptor()
             mode = self.mode_var.get()
             head = int(self.head_entry.get())
             tail = int(self.tail_entry.get())
@@ -492,23 +526,65 @@ class AdvancedFileCorruptor:
             else:  # custom
                 replace_value = self.custom_entry.get()
             
+            # 重置进度
+            self.progress_var.set(0)
+            self.progress_text.set("准备处理...")
+            self.status_var.set("正在处理，请稍候...")
+            
+            # 创建并启动处理线程
+            thread = threading.Thread(
+                target=self._process_file, 
+                args=(inp, out, mode, head, tail, replace_value),
+                daemon=True
+            )
+            thread.start()
+            
+        except ValueError as ve:
+            self.status_var.set("错误: " + str(ve))
+            messagebox.showerror("输入错误", str(ve))
+            self.process_btn.configure(state="normal")
+            self.processing = False
+        except Exception as e:
+            self.status_var.set("错误: " + str(e))
+            messagebox.showerror("处理失败", f"操作失败: {str(e)}")
+            self.process_btn.configure(state="normal")
+            self.processing = False
+    
+    def _process_file(self, inp, out, mode, head, tail, replace_value):
+        """在后台线程中处理文件"""
+        try:
+            # 创建损坏处理器
+            corruptor = FileCorruptor()
+            
+            # 进度回调函数
+            def update_progress(processed, total):
+                percent = (processed / total) * 100
+                self.progress_var.set(percent)
+                self.progress_text.set(f"处理中: {percent:.1f}% ({processed:,} / {total:,} 字节)")
+                self.root.update_idletasks()  # 安全更新UI
+            
+            # 根据模式调用
             if mode == "interval":
                 interval = int(self.interval_entry.get())
                 if interval <= 0:
                     raise ValueError("间隔字节数必须大于0")
                 corruptor.corrupt_fixed_interval(
-                    inp, out, interval, head, tail, replace_value=replace_value
+                    inp, out, interval, head, tail, replace_value,
+                    progress_callback=update_progress
                 )
             else:
                 rate = float(self.rate_entry.get()) / 100
                 if rate <= 0 or rate > 1:
                     raise ValueError("损坏比例必须在0-100之间")
                 corruptor.corrupt_random_rate(
-                    inp, out, rate, head, tail, replace_value=replace_value
+                    inp, out, rate, head, tail, replace_value,
+                    progress_callback=update_progress
                 )
             
             # 完成处理
-            self.status_var.set("处理完成!")
+            self.progress_var.set(100)
+            self.progress_text.set("处理完成!")
+            self.status_var.set("处理成功!")
             messagebox.showinfo("成功", "文件处理操作已完成")
             
         except ValueError as ve:
@@ -518,4 +594,6 @@ class AdvancedFileCorruptor:
             self.status_var.set("错误: " + str(e))
             messagebox.showerror("处理失败", f"操作失败: {str(e)}")
         finally:
+            # 恢复按钮状态
             self.process_btn.configure(state="normal")
+            self.processing = False

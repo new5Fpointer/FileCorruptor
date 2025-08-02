@@ -1,5 +1,4 @@
 # file_corruptor.py
-# file_corruptor.py
 import os
 import random
 import re
@@ -9,10 +8,11 @@ class FileCorruptor:
     def __init__(self, protect_head=1024, protect_tail=1024):
         self.protect_head = protect_head
         self.protect_tail = protect_tail
+        self.chunk_size = 1024 * 1024  # 1MB块大小
     
     def corrupt_fixed_interval(self, input_path, output_path, interval, 
                               protect_head=None, protect_tail=None,
-                              replace_value="random"):
+                              replace_value="random", progress_callback=None):
         """
         固定间隔损坏模式
         
@@ -31,23 +31,41 @@ class FileCorruptor:
         
         file_size = os.path.getsize(input_path)
         corrupt_end = max(0, file_size - protect_tail)
+        processed = 0
         
         with open(input_path, 'rb') as fin, open(output_path, 'wb') as fout:
             position = 0
-            for chunk in self._read_in_chunks(fin):
+            while True:
+                chunk = fin.read(self.chunk_size)
+                if not chunk:
+                    break
+                    
                 chunk_arr = bytearray(chunk)
                 for i in range(len(chunk_arr)):
                     global_pos = position + i
                     if global_pos < protect_head or global_pos >= corrupt_end:
                         continue
                     if global_pos % interval == 0:
-                        chunk_arr[i] = replace_byte if isinstance(replace_byte, int) else random.randint(0, 255)
+                        if replace_byte is not None:
+                            chunk_arr[i] = replace_byte
+                        else:
+                            chunk_arr[i] = random.randint(0, 255)
+                
                 fout.write(chunk_arr)
                 position += len(chunk_arr)
+                processed += len(chunk_arr)
+                
+                # 更新进度
+                if progress_callback and processed % (1024 * 1024) == 0:
+                    progress_callback(processed, file_size)
+            
+            # 确保最后更新到100%
+            if progress_callback:
+                progress_callback(processed, file_size)
 
     def corrupt_random_rate(self, input_path, output_path, rate,
                            protect_head=None, protect_tail=None,
-                           replace_value="random"):
+                           replace_value="random", progress_callback=None):
         """
         随机比例损坏模式
         
@@ -76,18 +94,37 @@ class FileCorruptor:
                 min(num_to_corrupt, corruptable_size)
             ))
         
+        processed = 0
         with open(input_path, 'rb') as fin, open(output_path, 'wb') as fout:
             position = 0
-            for chunk in self._read_in_chunks(fin):
+            while True:
+                chunk = fin.read(self.chunk_size)
+                if not chunk:
+                    break
+                    
                 chunk_arr = bytearray(chunk)
                 for i in range(len(chunk_arr)):
                     if (position + i) in corrupt_positions:
-                        chunk_arr[i] = replace_byte if isinstance(replace_byte, int) else random.randint(0, 255)
+                        if replace_byte is not None:
+                            chunk_arr[i] = replace_byte
+                        else:
+                            chunk_arr[i] = random.randint(0, 255)
+                
                 fout.write(chunk_arr)
                 position += len(chunk_arr)
+                processed += len(chunk_arr)
+                
+                # 更新进度
+                if progress_callback and processed % (1024 * 1024) == 0:
+                    progress_callback(processed, file_size)
+            
+            # 确保最后更新到100%
+            if progress_callback:
+                progress_callback(processed, file_size)
     
     def replace_specific_bytes(self, input_path, output_path, replace_value,
-                              protect_head=None, protect_tail=None):
+                              protect_head=None, protect_tail=None,
+                              progress_callback=None):
         """
         替换所有字节为特定值
         
@@ -106,18 +143,36 @@ class FileCorruptor:
         
         file_size = os.path.getsize(input_path)
         corrupt_end = max(0, file_size - protect_tail)
+        processed = 0
         
         with open(input_path, 'rb') as fin, open(output_path, 'wb') as fout:
             position = 0
-            for chunk in self._read_in_chunks(fin):
+            while True:
+                chunk = fin.read(self.chunk_size)
+                if not chunk:
+                    break
+                    
                 chunk_arr = bytearray(chunk)
                 for i in range(len(chunk_arr)):
                     global_pos = position + i
                     if global_pos < protect_head or global_pos >= corrupt_end:
                         continue
-                    chunk_arr[i] = replace_byte if isinstance(replace_byte, int) else random.randint(0, 255)
+                    if replace_byte is not None:
+                        chunk_arr[i] = replace_byte
+                    else:
+                        chunk_arr[i] = random.randint(0, 255)
+                
                 fout.write(chunk_arr)
                 position += len(chunk_arr)
+                processed += len(chunk_arr)
+                
+                # 更新进度
+                if progress_callback and processed % (1024 * 1024) == 0:
+                    progress_callback(processed, file_size)
+            
+            # 确保最后更新到100%
+            if progress_callback:
+                progress_callback(processed, file_size)
     
     def _parse_replace_value(self, value):
         """解析替换值"""
@@ -145,11 +200,3 @@ class FileCorruptor:
         
         # 默认返回随机值
         return None
-
-    def _read_in_chunks(self, file_object, chunk_size=8*1024*1024):
-        """文件分块读取生成器"""
-        while True:
-            data = file_object.read(chunk_size)
-            if not data:
-                break
-            yield data
