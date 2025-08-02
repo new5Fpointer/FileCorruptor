@@ -182,11 +182,11 @@ class ModernEntry(tk.Canvas):
             visible_width = self.winfo_width() - 20
             
             # 自动滚动逻辑 - 光标在右侧边界时
-            if (text_cursor_x - self.text_offset) > (visible_width - 5):
-                self.text_offset = text_cursor_x - visible_width + 5
+            if (text_cursor_x - self.text_offset) > (visible_width - 30):
+                self.text_offset = text_cursor_x - visible_width + 30
             # 光标在左侧边界时
-            elif (text_cursor_x - self.text_offset) < 5:
-                self.text_offset = max(0, text_cursor_x - 5)
+            elif (text_cursor_x - self.text_offset) < 15:
+                self.text_offset = max(0, text_cursor_x - 15)
             
             # 确保偏移量不会使文本移出太多
             max_offset = max(0, self._font.measure(self._text) - visible_width + 20)
