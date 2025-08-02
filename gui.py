@@ -14,8 +14,8 @@ class AdvancedFileCorruptor:
     def _setup_window(self):
         """窗口基本设置"""
         self.root.title("文件熵增器")
-        self.root.geometry("580x480")
-        self.root.minsize(500, 400)
+        self.root.geometry("650x560")  # 增加高度以容纳新控件
+        self.root.minsize(500, 450)
         self.bg_color = "#252526"
         self.fg_color = "#e0e0e0"
         self.accent = "#4ec9b0"
@@ -293,6 +293,84 @@ class AdvancedFileCorruptor:
         # 初始显示模式
         self._update_mode_display()
         
+        # 替换值设置区域
+        replace_frame = ttk.LabelFrame(
+            main_frame, 
+            text=" 替换值设置 ", 
+            padding=(10, 10),
+            style="Custom.TLabelframe"
+        )
+        replace_frame.pack(fill=tk.X, pady=10)
+        
+        # 替换模式选择
+        replace_mode_frame = tk.Frame(replace_frame, bg=self.bg_color)
+        replace_mode_frame.pack(fill=tk.X, pady=5)
+        
+        tk.Label(
+            replace_mode_frame, 
+            text="替换方式:", 
+            bg=self.bg_color, 
+            fg=self.fg_color
+        ).pack(side=tk.LEFT, padx=(0, 10))
+        
+        self.replace_mode = tk.StringVar(value="random")
+        
+        # 替换模式单选按钮
+        modes = [
+            ("随机字节", "random"),
+            ("替换为 0x00", "zero"),
+            ("替换为 0xFF", "ff"),
+            ("自定义值", "custom")
+        ]
+        
+        for i, (text, value) in enumerate(modes):
+            rb = tk.Radiobutton(
+                replace_mode_frame, 
+                text=text, 
+                variable=self.replace_mode, 
+                value=value,
+                bg=self.bg_color, 
+                fg=self.fg_color, 
+                selectcolor=self.bg_color,
+                command=self._update_replace_mode
+            )
+            rb.pack(side=tk.LEFT, padx=(0, 10))
+        
+        # 自定义值输入框
+        custom_frame = tk.Frame(replace_frame, bg=self.bg_color)
+        custom_frame.pack(fill=tk.X, pady=5)
+        
+        tk.Label(
+            custom_frame, 
+            text="自定义值:", 
+            bg=self.bg_color, 
+            fg=self.fg_color
+        ).pack(side=tk.LEFT, padx=(0, 5))
+        
+        self.custom_entry = ModernEntry(
+            custom_frame, 
+            width=100, 
+            height=26, 
+            radius=4,
+            bg_color="#333333", 
+            border_normal="#404040",
+            border_focus=self.accent, 
+            text_color=self.fg_color
+        )
+        self.custom_entry.pack(side=tk.LEFT)
+        self.custom_entry.insert(0, "0x55")
+        
+        # 提示标签
+        tk.Label(
+            custom_frame, 
+            text="(格式: 0xXX 或 十进制数)", 
+            bg=self.bg_color, 
+            fg="#aaaaaa"
+        ).pack(side=tk.LEFT, padx=(10, 0))
+        
+        # 初始更新替换模式显示
+        self._update_replace_mode()
+        
         # 操作按钮区域
         btn_frame = tk.Frame(main_frame, bg=self.bg_color)
         btn_frame.pack(pady=15)
@@ -356,6 +434,14 @@ class AdvancedFileCorruptor:
             self.interval_entry.configure(state="disabled")
             self.rate_entry.configure(state="normal")
     
+    def _update_replace_mode(self):
+        """根据替换模式更新显示"""
+        mode = self.replace_mode.get()
+        if mode == "custom":
+            self.custom_entry.configure(state="normal")
+        else:
+            self.custom_entry.configure(state="disabled")
+    
     def _select_input(self):
         """选择输入文件"""
         self.status_var.set("选择源文件...")
@@ -395,16 +481,31 @@ class AdvancedFileCorruptor:
             head = int(self.head_entry.get())
             tail = int(self.tail_entry.get())
             
+            # 获取替换值
+            replace_mode = self.replace_mode.get()
+            if replace_mode == "random":
+                replace_value = "random"
+            elif replace_mode == "zero":
+                replace_value = "0x00"
+            elif replace_mode == "ff":
+                replace_value = "0xFF"
+            else:  # custom
+                replace_value = self.custom_entry.get()
+            
             if mode == "interval":
                 interval = int(self.interval_entry.get())
                 if interval <= 0:
                     raise ValueError("间隔字节数必须大于0")
-                corruptor.corrupt_fixed_interval(inp, out, interval, head, tail)
+                corruptor.corrupt_fixed_interval(
+                    inp, out, interval, head, tail, replace_value=replace_value
+                )
             else:
                 rate = float(self.rate_entry.get()) / 100
                 if rate <= 0 or rate > 1:
                     raise ValueError("损坏比例必须在0-100之间")
-                corruptor.corrupt_random_rate(inp, out, rate, head, tail)
+                corruptor.corrupt_random_rate(
+                    inp, out, rate, head, tail, replace_value=replace_value
+                )
             
             # 完成处理
             self.status_var.set("处理完成!")
