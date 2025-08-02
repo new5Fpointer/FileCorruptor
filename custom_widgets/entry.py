@@ -1,10 +1,11 @@
+# entry.py
 from tkinter import font as tkfont
 import tkinter as tk
 import math
 from .cursor import PureCursor
 
 class ModernEntry(tk.Canvas):
-    """优化后的输入框，支持文本滚动和光标位置跟踪"""
+    """优化后的输入框，延迟创建光标"""
     _active_cursor = None  # 类变量，记录当前激活光标的输入框
 
     def __init__(self, master, width=180, height=30, radius=2,
@@ -19,7 +20,6 @@ class ModernEntry(tk.Canvas):
         self.text_color = text_color
         self._cursor_pos = 0
         self._text = ""
-        self.text_offset = 0  # 文本偏移量（滚动位置）
         self._font = tkfont.Font(family=font_family, size=font_size)
         
         # 使用固定光标高度
@@ -35,7 +35,7 @@ class ModernEntry(tk.Canvas):
 
         # 文本显示 - 垂直居中
         font_height = self._font.metrics("linespace")
-        self.text_x = 10  # 文本起始X位置（左边距）
+        self.text_x = 8
         self.text_y = (height - font_height) // 2
         
         # 计算光标垂直偏移量
@@ -52,19 +52,13 @@ class ModernEntry(tk.Canvas):
         )
         
         # 优化：延迟创建光标对象
-        self.cursor = None
+        self.cursor = None  # 初始时不创建光标
         
         # 事件绑定
         self.bind("<Button-1>", self._on_click)
         self.bind("<Key>", self._on_key_press)
         self.bind("<FocusIn>", self._on_focus_in)
         self.bind("<FocusOut>", self._on_focus_out)
-        self.bind("<Configure>", self._on_resize)  # 窗口大小变化事件
-
-    def _on_resize(self, event):
-        """窗口大小变化时重新定位"""
-        if event.widget == self:
-            self._update_text_position()
 
     def _on_focus_in(self, event=None):
         """获得焦点时激活光标"""
@@ -115,22 +109,19 @@ class ModernEntry(tk.Canvas):
         click_x = event.x
         text_width = self._font.measure(self._text)
         
-        # 考虑文本偏移量计算实际点击位置
-        actual_click_x = click_x + self.text_offset
-        
         # 简单逻辑：如果点击在文本右侧，光标放末尾
-        if actual_click_x > self.text_x + text_width:
+        if click_x > self.text_x + text_width:
             self._cursor_pos = len(self._text)
         else:
             # 否则遍历字符，找到最近的光标位置
             for i in range(len(self._text) + 1):
                 substr = self._text[:i]
                 substr_width = self._font.measure(substr)
-                if actual_click_x <= self.text_x + substr_width:
+                if click_x <= self.text_x + substr_width:
                     self._cursor_pos = i
                     break
         
-        self._update_text_position()
+        self._update_cursor()
         self.focus_set()  # 确保点击后输入框获得焦点
 
     def _on_key_press(self, event):
@@ -161,73 +152,21 @@ class ModernEntry(tk.Canvas):
             self._cursor_pos += 1
         
         self._update_text()
-        self._update_text_position()
+        self._update_cursor()
 
     def _update_text(self):
         """更新显示的文本"""
         self.itemconfig(self.text_id, text=self._text)
         
-    def _update_text_position(self, update_cursor=True):
-        """
-        动态调整文本位置
-        :param update_cursor: 是否同时更新光标位置
-        """
-        # 安全检测
-        if not hasattr(self, '_text') or not hasattr(self, '_cursor_pos'):
-            return
-            
-        try:
-            # 计算光标在文本中的位置
-            text_cursor_x = self._font.measure(self._text[:self._cursor_pos])
-            visible_width = self.winfo_width() - 20
-            
-            # 自动滚动逻辑 - 光标在右侧边界时
-            if (text_cursor_x - self.text_offset) > (visible_width - 30):
-                self.text_offset = text_cursor_x - visible_width + 30
-            # 光标在左侧边界时
-            elif (text_cursor_x - self.text_offset) < 15:
-                self.text_offset = max(0, text_cursor_x - 15)
-            
-            # 确保偏移量不会使文本移出太多
-            max_offset = max(0, self._font.measure(self._text) - visible_width + 20)
-            self.text_offset = min(self.text_offset, max_offset)
-            
-            # 更新文本位置
-            self.coords(self.text_id, self.text_x - self.text_offset, self.text_y)
-            
-            # 如果需要更新光标位置
-            if update_cursor:
-                self._update_cursor(update_text_position=False)
-                
-        except Exception as e:
-            print(f"滚动错误: {e}")
-
-    def _update_cursor(self, update_text_position=True):
-        """更新光标位置 - 添加参数控制是否更新文本位置"""
-        if not hasattr(self, '_text') or not hasattr(self, '_cursor_pos'):
-            return
-            
+    def _update_cursor(self):
+        """更新光标位置"""
         substr = self._text[:self._cursor_pos]
-        text_cursor_x = self._font.measure(substr)
-        
-        # 计算光标在画布上的位置（考虑文本偏移）
-        canvas_cursor_x = self.text_x + text_cursor_x - self.text_offset
-        
-        # 可见区域边界保护
-        visible_width = self.winfo_width() - 20
-        if canvas_cursor_x < 10:  # 左边距保护
-            canvas_cursor_x = 10
-        elif canvas_cursor_x > visible_width:
-            canvas_cursor_x = visible_width - 5
-        
+        cursor_x = self.text_x + self._font.measure(substr)
         cursor_y = self.text_y + self.cursor_y_offset
         
-        if hasattr(self, 'cursor') and self.cursor:
-            self.cursor.move(canvas_cursor_x, cursor_y)
-        
-        # 如果需要更新文本位置
-        if update_text_position:
-            self._update_text_position(update_cursor=False)
+        # 如果光标存在，更新其位置
+        if self.cursor:
+            self.cursor.move(cursor_x, cursor_y)
 
     def get(self):
         """获取输入框内容"""
@@ -235,14 +174,10 @@ class ModernEntry(tk.Canvas):
 
     def insert(self, idx, txt):
         """插入文本"""
-        # 处理特殊索引值
-        if idx == "end" or idx == tk.END:
-            idx = len(self._text)
-        
         self._text = self._text[:idx] + txt + self._text[idx:]
         self._cursor_pos = idx + len(txt)
         self._update_text()
-        self._update_text_position()
+        self._update_cursor()
 
     def delete(self, fst, lst=None):
         """删除文本"""
@@ -272,14 +207,7 @@ class ModernEntry(tk.Canvas):
         self._text = self._text[:fst] + self._text[lst:]
         self._cursor_pos = fst
         self._update_text()
-        self._update_text_position()
-
-    def configure(self, **kwargs):
-        """配置输入框属性"""
-        if 'width' in kwargs:
-            super().configure(width=kwargs['width'])
-            self._update_text_position()
-        # 可以添加其他配置项的处理...
+        self._update_cursor()
 
     def _draw_rounded_rect(self, x1, y1, x2, y2, **kwargs):
         """绘制圆角矩形"""
@@ -290,7 +218,6 @@ class ModernEntry(tk.Canvas):
         left = x1 + radius
         right = x2 - radius
         
-        # 顺时针绘制路径
         points.extend([x1, top])
         points.extend(self._get_arc_points(left, top, radius, math.pi, math.pi*1.5))
         points.extend([right, y1])
